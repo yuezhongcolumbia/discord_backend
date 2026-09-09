@@ -8,15 +8,18 @@ from app.api.exception_handlers import register_exception_handlers
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.cassandra import cassandra_client
+from app.messaging.kafka import create_kafka_producer
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await run_in_threadpool(cassandra_client.connect)
-
+    kafka_producer = create_kafka_producer()
+    app.state.kafka_producer = kafka_producer
     try:
         yield
     finally:
+        kafka_producer.flush(timeout=10)
         await run_in_threadpool(cassandra_client.close)
 
 app = FastAPI(

@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     cassandra_port: int = 9042
     cassandra_keyspace: str = "discord_messages"
 
+    kafka_bootstrap_servers: str = "localhost:9092"
+    kafka_message_accepted_topic: str = "discord.message.accepted.v1"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
