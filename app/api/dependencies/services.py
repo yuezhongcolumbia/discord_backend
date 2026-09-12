@@ -6,7 +6,9 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.cassandra import get_message_repository
+from app.api.dependencies.messaging import get_message_publisher
 from app.db.session import get_db_session
+from app.messaging.message_publisher import MessagePublisher
 from app.repositories.channel_repository import ChannelRepository
 from app.repositories.guild_repository import GuildRepository
 from app.repositories.message_repository import MessageRepository
@@ -34,9 +36,14 @@ def get_message_service(
         MessageRepository,
         Depends(get_message_repository),
     ],
+    message_publisher: Annotated[
+        MessagePublisher,
+        Depends(get_message_publisher),
+    ]
 ) -> MessageService:
     return MessageService(
         channel_repository=ChannelRepository(db_session),
         guild_repository=GuildRepository(db_session),
         message_repository=message_repository,
+        message_publisher=message_publisher,
     )

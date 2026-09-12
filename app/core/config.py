@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_message_accepted_topic: str = "discord.message.accepted.v1"
 
+    # Maximum time librdkafka may spend delivering a produced message.
+    kafka_delivery_timeout_ms: int = 5000
+
+    # Maximum time the application waits for the delivery callback.
+    kafka_publish_wait_timeout_seconds: float = 6.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

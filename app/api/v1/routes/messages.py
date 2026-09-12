@@ -18,7 +18,7 @@ router = APIRouter(
 @router.post(
     "",
     response_model=MessageResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def create_message(
     channel_id: UUID,

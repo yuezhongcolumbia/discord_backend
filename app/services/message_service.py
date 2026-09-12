@@ -13,6 +13,7 @@ from app.repositories.channel_repository import ChannelRepository
 from app.repositories.guild_repository import GuildRepository
 from app.repositories.message_repository import MessageRepository
 from app.schemas.message import MessageCreate
+from app.messaging.message_publisher import MessagePublisher
 
 
 class MessageService:
@@ -21,10 +22,12 @@ class MessageService:
         channel_repository: ChannelRepository,
         guild_repository: GuildRepository,
         message_repository: MessageRepository,
+        message_publisher: MessagePublisher,
     ) -> None:
         self._channel_repository = channel_repository
         self._guild_repository = guild_repository
         self._message_repository = message_repository
+        self._message_publisher= message_publisher
 
     async def _validate_channel_access(
             self,
@@ -70,7 +73,7 @@ class MessageService:
         )
 
         await run_in_threadpool(
-            self._message_repository.save,
+            self._message_publisher.publish,
             message,
         )
 
