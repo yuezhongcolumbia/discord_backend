@@ -13,6 +13,7 @@ class CassandraClient:
         self._cluster = Cluster(
             contact_points=settings.cassandra_contact_points.split(","),
             port=settings.cassandra_port,
+            protocol_version=4,
         )
         self._session = self._cluster.connect(
             settings.cassandra_keyspace,

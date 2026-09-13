@@ -8,4 +8,7 @@ dependencies = [
     "psycopg[binary]>=3.3.4",
     "pydantic-settings>=2.14.2",
     "sqlalchemy>=2.0.51",
+    "cassandra-driver>=3.29,<4",
+    "confluent-kafka>=2.15,<3"
+
 ]

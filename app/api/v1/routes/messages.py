@@ -4,10 +4,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status, Query
 
 from app.api.dependencies.authentication import get_current_user_id
-from app.api.dependencies.services import get_message_service
+from app.api.dependencies.services import get_message_submission_service, \
+    get_message_history_service
 from app.schemas.message import MessageCreate, MessageResponse, MessagePageResponse
-from app.services.message_service import MessageService
-
+from app.services.message_history_service import MessageHistoryService
+from app.services.message_submission_service import MessageSubmissionService
 
 router = APIRouter(
     prefix="/channels/{channel_id}/messages",
@@ -18,7 +19,7 @@ router = APIRouter(
 @router.post(
     "",
     response_model=MessageResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def create_message(
     channel_id: UUID,
@@ -27,12 +28,12 @@ async def create_message(
         UUID,
         Depends(get_current_user_id),
     ],
-    message_service: Annotated[
-        MessageService,
-        Depends(get_message_service),
+    message_submission_service: Annotated[
+        MessageSubmissionService,
+        Depends(get_message_submission_service),
     ],
 ) -> MessageResponse:
-    message = await message_service.create_message(
+    message = await message_submission_service.create_message(
         channel_id=channel_id,
         author_id=current_user_id,
         message_create=message_create,
@@ -53,9 +54,9 @@ async def list_messages(
         UUID,
         Depends(get_current_user_id),
     ],
-    message_service: Annotated[
-        MessageService,
-        Depends(get_message_service),
+    message_history_service: Annotated[
+        MessageHistoryService,
+        Depends(get_message_history_service),
     ],
     limit: Annotated[
         int,
@@ -66,7 +67,7 @@ async def list_messages(
         Query(),
     ] = None,
 ) -> MessagePageResponse:
-    page = await message_service.list_messages(
+    page = await message_history_service.list_messages(
         channel_id=channel_id,
         current_user_id=current_user_id,
         limit=limit,

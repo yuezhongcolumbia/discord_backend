@@ -4,6 +4,7 @@ from app.exceptions.channel import ChannelNotFoundError
 from app.exceptions.guild import GuildNotFoundError, OwnerCannotLeaveGuildError, GuildOwnerRequiredError, \
     GuildMembershipRequiredError
 from app.exceptions.message import InvalidMessageCursorError
+from app.exceptions.kafka import KafkaPublishError
 
 
 async def handle_guild_not_found(
@@ -55,13 +56,24 @@ async def handle_channel_not_found(
     )
 
 async def handle_invalid_message_cursor(
-    request: Request,
+    _request: Request,
     exception: InvalidMessageCursorError,
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={
             "detail": str(exception),
+        },
+    )
+
+async def handle_kafka_publish_error(
+    _request: Request,
+    _exception: KafkaPublishError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": "Message publishing is temporarily unavailable.",
         },
     )
 
@@ -92,4 +104,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         InvalidMessageCursorError,
         handle_invalid_message_cursor
+    )
+    app.add_exception_handler(
+        KafkaPublishError,
+        handle_kafka_publish_error,
     )
