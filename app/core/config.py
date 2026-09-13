@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +21,26 @@ class Settings(BaseSettings):
 
     # Maximum time the application waits for the delivery callback.
     kafka_publish_wait_timeout_seconds: float = 6.0
+
+    # Dedicated consumer group for Cassandra message persistence.
+    kafka_message_persistence_group_id: str = (
+    "discord-message-persistence-consumer-v1"
+    )
+
+    # Offset reset policy used only when this consumer group has no committed offset.
+    kafka_consumer_auto_offset_reset: Literal["earliest", "latest"] = "earliest"
+
+    # Maximum time a consumer poll waits for records before returning.
+    kafka_consumer_poll_timeout_seconds: float = 1.0
+
+    # Initial delay before retrying a failed Cassandra persistence attempt.
+    kafka_consumer_retry_initial_backoff_seconds: float = 2.0
+
+    # Upper bound for exponential retry delays.
+    kafka_consumer_retry_max_backoff_seconds: float = 30.0
+
+    # Maximum Cassandra persistence attempts before the consumer exits.
+    kafka_consumer_retry_max_attempts: int = 7
 
     model_config = SettingsConfigDict(
         env_file=".env",
