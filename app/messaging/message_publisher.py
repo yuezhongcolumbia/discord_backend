@@ -8,6 +8,3 @@ from app.domain.message import Message
 class MessagePublisher(Protocol):
     def publish(self, message: Message) -> None:
         ...
-
-    def close(self) -> None:
-        ...

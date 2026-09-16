@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # Maximum Cassandra persistence attempts before the consumer exits.
     kafka_consumer_retry_max_attempts: int = 7
 
+    kafka_message_persisted_topic: str = (
+        "discord.message.persisted.v1"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
