@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     cassandra_port: int = 9042
     cassandra_keyspace: str = "discord_messages"
 
+    ollama_message_semantic_model_name: str = "qwen3:4b"
+
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_message_accepted_topic: str = "discord.message.accepted.v1"
 
@@ -44,6 +46,10 @@ class Settings(BaseSettings):
 
     kafka_message_persisted_topic: str = (
         "discord.message.persisted.v1"
+    )
+
+    kafka_message_semantic_group_id: str = (
+        "discord-message-semantic-v1"
     )
 
     model_config = SettingsConfigDict(

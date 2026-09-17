@@ -13,3 +13,7 @@ class Message:
     message_content: str | None
     attachment_ids: list[UUID]
     edited_at: datetime | None = None
+    sentiment: str | None = None
+    sentiment_labeled_at: datetime | None = None
+    sentiment_model_name: str | None = None
+    sentiment_prompt_version: str | None = None
