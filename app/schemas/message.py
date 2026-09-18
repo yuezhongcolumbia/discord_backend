@@ -1,7 +1,14 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_validator,
+)
+
+
 
 
 class MessageCreate(BaseModel):
@@ -13,6 +20,7 @@ class MessageCreate(BaseModel):
         default_factory=list,
         max_length=10,
     )
+
     @model_validator(mode="after")
     def validate_content(self) -> "MessageCreate":
         has_text = bool(
@@ -25,11 +33,13 @@ class MessageCreate(BaseModel):
             raise ValueError(
                 "A message must contain text or at least one attachment"
             )
+
         return self
 
 
 class MessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
     message_id: UUID
     channel_id: UUID
     author_id: UUID
@@ -37,6 +47,11 @@ class MessageResponse(BaseModel):
     attachment_ids: list[UUID]
     created_at: datetime
     edited_at: datetime | None
+
+    sentiment: str | None = None
+    sentiment_labeled_at: datetime | None = None
+    sentiment_model_name: str | None = None
+    sentiment_prompt_version: str | None = None
 
 
 class MessagePageResponse(BaseModel):

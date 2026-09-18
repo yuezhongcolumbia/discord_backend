@@ -49,20 +49,20 @@ class OllamaMessageSemanticLabeler:
                 {
                     "role": "system",
                     "content": (
-                        "You classify the apparent sentiment of Discord "
-                        "messages. Choose exactly one label: positive, "
-                        "negative, or neutral. Return only JSON that "
-                        "matches the provided schema."
+                        "Classify the sentiment as positive, negative, "
+                        "or neutral. Return only valid JSON."
                     ),
                 },
                 {
                     "role": "user",
-                    "content": message.message_content,
+                    "content": message.message_content or "",
                 },
             ],
             format=_SentimentResponse.model_json_schema(),
+            think=False,
             options={
                 "temperature": 0,
+                "num_predict": 20,
             },
         )
 
