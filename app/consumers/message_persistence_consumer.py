@@ -12,7 +12,8 @@ from confluent_kafka import (
 from pydantic import ValidationError
 
 from app.domain.message import Message
-from app.events.message import MessageAcceptedPayload
+from app.events.message import MessageAcceptedEvent
+from app.messaging.message_publisher import MessagePublisher
 from app.repositories.message_repository import MessageRepository
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ class MessagePersistenceConsumer:
         consumer: Consumer,
         topic: str,
         message_repository: MessageRepository,
+        message_persisted_publisher: MessagePublisher,
         poll_timeout_seconds: float,
         retry_initial_backoff_seconds: float,
         retry_max_backoff_seconds: float,
@@ -41,6 +43,9 @@ class MessagePersistenceConsumer:
         self._consumer = consumer
         self._topic = topic
         self._message_repository = message_repository
+        self._message_persisted_publisher = (
+            message_persisted_publisher
+        )
         self._poll_timeout_seconds = poll_timeout_seconds
         self._retry_initial_backoff_seconds = retry_initial_backoff_seconds
         self._retry_max_backoff_seconds = retry_max_backoff_seconds
@@ -110,7 +115,7 @@ class MessagePersistenceConsumer:
             return
 
         try:
-            self._persist_and_commit(
+            self._persist_publish_and_commit(
                 record=record,
                 message=message,
             )
@@ -136,7 +141,7 @@ class MessagePersistenceConsumer:
                 continue
 
             try:
-                self._persist_and_commit(
+                self._persist_publish_and_commit(
                     record=retry.record,
                     message=retry.message,
                 )
@@ -164,13 +169,14 @@ class MessagePersistenceConsumer:
                     "Message persistence retry succeeded.",
                 )
 
-    def _persist_and_commit(
+    def _persist_publish_and_commit(
         self,
         record: KafkaMessage,
         message: Message,
     ) -> None:
         self._message_repository.save(message)
 
+        self._message_persisted_publisher.publish(message)
         self._consumer.commit(
             message=record,
             asynchronous=False,
@@ -184,9 +190,9 @@ class MessagePersistenceConsumer:
         if value is None:
             raise ValueError("Kafka message value must not be null.")
 
-        payload = MessageAcceptedPayload.model_validate_json(value)
+        event = MessageAcceptedEvent.model_validate_json(value)
 
-        return payload.to_message()
+        return event.payload.to_message()
 
     def _pause_for_retry(
         self,

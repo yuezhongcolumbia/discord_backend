@@ -52,6 +52,23 @@ class MessageRepository:
             )
         )
 
+        self._update_message_sentiment: PreparedStatement = (
+            self._session.prepare(
+                """
+                UPDATE messages_by_channel_bucket
+                SET
+                    sentiment = ?,
+                    sentiment_labeled_at = ?,
+                    sentiment_model_name = ?,
+                    sentiment_prompt_version = ?
+                WHERE channel_id = ?
+                  AND bucket_date = ?
+                  AND created_at = ?
+                  AND message_id = ?
+                """
+            )
+        )
+
         # ---------- Read statements ----------
 
         self._select_latest_bucket: PreparedStatement = (
@@ -87,6 +104,10 @@ class MessageRepository:
                     message_id,
                     author_id,
                     edited_at,
+                    sentiment,
+                    sentiment_labeled_at,
+                    sentiment_model_name,
+                    sentiment_prompt_version,
                     message_content,
                     attachment_ids
                 FROM messages_by_channel_bucket
@@ -107,6 +128,10 @@ class MessageRepository:
                     message_id,
                     author_id,
                     edited_at,
+                    sentiment,
+                    sentiment_labeled_at,
+                    sentiment_model_name,
+                    sentiment_prompt_version,
                     message_content,
                     attachment_ids
                 FROM messages_by_channel_bucket
@@ -151,6 +176,30 @@ class MessageRepository:
         self._session.execute(batch)
 
         return message
+
+    def update_sentiments(
+            self,
+            messages: list[Message],
+    ) -> None:
+        futures = [
+            self._session.execute_async(
+                self._update_message_sentiment,
+                (
+                    message.sentiment,
+                    message.sentiment_labeled_at,
+                    message.sentiment_model_name,
+                    message.sentiment_prompt_version,
+                    message.channel_id,
+                    message.bucket_date,
+                    message.created_at,
+                    message.message_id,
+                ),
+            )
+            for message in messages
+        ]
+
+        for future in futures:
+            future.result()
 
     def get_latest_bucket(
         self,
@@ -252,6 +301,14 @@ class MessageRepository:
                 if row.edited_at is not None
                 else None
             ),
+            sentiment=row.sentiment,
+            sentiment_labeled_at=(
+                cls._to_utc_datetime(row.sentiment_labeled_at)
+                if row.sentiment_labeled_at is not None
+                else None
+            ),
+            sentiment_model_name=row.sentiment_model_name,
+            sentiment_prompt_version=row.sentiment_prompt_version,
             message_content=row.message_content,
             attachment_ids=list(
                 row.attachment_ids or [],

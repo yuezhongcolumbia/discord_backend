@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS discord_messages.messages_by_channel_bucket (
     message_content text,
     attachment_ids list<uuid>,
     edited_at timestamp,
+    sentiment text,
+    sentiment_labeled_at timestamp,
+    sentiment_model_name text,
+    sentiment_prompt_version text,
     PRIMARY KEY (
         (channel_id, bucket_date),
         created_at,

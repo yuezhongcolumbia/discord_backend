@@ -9,7 +9,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.cassandra import cassandra_client
 from app.messaging.kafka import create_kafka_producer
-from app.messaging.kafka_message_publisher import KafkaMessagePublisher
+from app.messaging.kafka_message_accepted_publisher import KafkaMessageAcceptedPublisher
 
 
 @asynccontextmanager
@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         kafka_producer = create_kafka_producer()
 
-        message_publisher = KafkaMessagePublisher(
+        message_publisher = KafkaMessageAcceptedPublisher(
             producer=kafka_producer,
             topic=settings.kafka_message_accepted_topic,
             publish_wait_timeout_seconds=settings.kafka_publish_wait_timeout_seconds,

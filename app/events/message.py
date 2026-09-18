@@ -1,5 +1,5 @@
 from datetime import UTC, date, datetime
-from typing import Literal
+from typing import Literal, Self
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,7 +23,7 @@ class MessageAcceptedPayload(BaseModel):
     def from_message(
         cls,
         message: Message,
-    ) -> "MessageAcceptedPayload":
+    ) -> Self:
         return cls(
             message_id=message.message_id,
             channel_id=message.channel_id,
@@ -63,7 +63,36 @@ class MessageAcceptedEvent(BaseModel):
     def from_message(
         cls,
         message: Message,
-    ) -> "MessageAcceptedEvent":
+    ) -> Self:
         return cls(
-            payload=MessageAcceptedPayload.from_message(message),
+            payload=MessageAcceptedPayload.from_message(
+                message,
+            ),
+        )
+
+
+class MessagePersistedPayload(MessageAcceptedPayload):
+    pass
+
+
+class MessagePersistedEvent(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    event_id: UUID = Field(default_factory=uuid4)
+    event_type: Literal["message.persisted"] = "message.persisted"
+    event_version: Literal[1] = 1
+    occurred_at: datetime
+    payload: MessagePersistedPayload
+
+    @classmethod
+    def from_message(
+        cls,
+        message: Message,
+        persisted_at: datetime,
+    ) -> Self:
+        return cls(
+            occurred_at=persisted_at,
+            payload=MessagePersistedPayload.from_message(
+                message,
+            ),
         )
