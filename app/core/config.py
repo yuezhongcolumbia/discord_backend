@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     kafka_message_semantic_group_id: str = (
         "discord-message-semantic-v1"
     )
+    kafka_message_semantic_batch_size: int = 10
+
+    kafka_message_semantic_flush_interval_seconds: float = 5.0
+
+    message_semantic_prompt_version: str = "sentiment-v1"
 
     model_config = SettingsConfigDict(
         env_file=".env",
