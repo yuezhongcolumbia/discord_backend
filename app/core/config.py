@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     cassandra_keyspace: str = "discord_messages"
 
     ollama_message_semantic_model_name: str = "qwen3:1.7b"
+    langfuse_enabled: bool = False
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_base_url: str = "https://us.cloud.langfuse.com"
 
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_message_accepted_topic: str = "discord.message.accepted.v1"
