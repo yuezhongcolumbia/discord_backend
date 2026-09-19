@@ -10,6 +10,8 @@ python -m alembic upgrade head
 
 start the application:
 fastapi dev app/main.py   ctrl + c to terminate
+python -m  app.message_persistence_runner
+python -m app.message_semantic_runner
 
 change terminal env
 & C:\dev\discord\.venv\Scripts\Activate.ps1

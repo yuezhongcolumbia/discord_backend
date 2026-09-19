@@ -11,13 +11,18 @@ from app.db.cassandra import cassandra_client
 from app.messaging.kafka import (
     create_kafka_message_semantic_consumer,
 )
+from app.observability.langfuse_client import (
+    create_langfuse_client,
+)
 from app.repositories.message_repository import MessageRepository
 
-
 def main() -> None:
-    cassandra_client.connect()
+    langfuse_client = None
 
     try:
+        langfuse_client = create_langfuse_client()
+        cassandra_client.connect()
+
         kafka_consumer = (
             create_kafka_message_semantic_consumer()
         )
@@ -28,6 +33,7 @@ def main() -> None:
 
         labeler = OllamaMessageSemanticLabeler(
             model_name=settings.ollama_message_semantic_model_name,
+            langfuse_client=langfuse_client,
         )
 
         consumer = MessageSemanticConsumer(
@@ -53,6 +59,8 @@ def main() -> None:
     finally:
         cassandra_client.close()
 
+        if langfuse_client is not None:
+            langfuse_client.shutdown()
 
 if __name__ == "__main__":
     logging.basicConfig(
