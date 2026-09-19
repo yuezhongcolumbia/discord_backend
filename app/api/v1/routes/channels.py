@@ -1,11 +1,24 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+)
 
-from app.api.dependencies.authentication import get_current_user_id
-from app.api.dependencies.services import get_channel_service
-from app.schemas.channel import ChannelCreate, ChannelResponse,ChannelUpdate
+from app.api.dependencies.authentication import (
+    get_current_user_id,
+)
+from app.api.dependencies.services import (
+    get_channel_service,
+)
+from app.schemas.channel import (
+    ChannelCreate,
+    ChannelResponse,
+    ChannelUpdate,
+)
 from app.services.channel_service import ChannelService
 
 
@@ -19,13 +32,18 @@ channel_router = APIRouter(
     tags=["channels"],
 )
 
+dm_channels_router = APIRouter(
+    prefix="/users",
+    tags=["direct messages"],
+)
+
 
 @guild_channels_router.post(
     "",
     response_model=ChannelResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_channel(
+async def create_guild_channel(
     guild_id: UUID,
     channel_create: ChannelCreate,
     current_user_id: Annotated[
@@ -37,7 +55,7 @@ async def create_channel(
         Depends(get_channel_service),
     ],
 ) -> ChannelResponse:
-    channel = await channel_service.create_channel(
+    channel = await channel_service.create_guild_channel(
         guild_id=guild_id,
         channel_create=channel_create,
         current_user_id=current_user_id,
@@ -49,7 +67,7 @@ async def create_channel(
 @guild_channels_router.get(
     "",
     response_model=list[ChannelResponse],
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,
 )
 async def list_channels(
     guild_id: UUID,
@@ -71,6 +89,40 @@ async def list_channels(
         ChannelResponse.model_validate(channel)
         for channel in channels
     ]
+
+
+@dm_channels_router.post(
+    "/{recipient_id}/dm",
+    response_model=ChannelResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def create_or_get_dm_channel(
+    recipient_id: UUID,
+    current_user_id: Annotated[
+        UUID,
+        Depends(get_current_user_id),
+    ],
+    channel_service: Annotated[
+        ChannelService,
+        Depends(get_channel_service),
+    ],
+) -> ChannelResponse:
+    if current_user_id == recipient_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Cannot create a DM channel "
+                "with yourself."
+            ),
+        )
+
+    channel = await channel_service.create_or_get_dm_channel(
+        current_user_id=current_user_id,
+        recipient_id=recipient_id,
+    )
+
+    return ChannelResponse.model_validate(channel)
+
 
 @channel_router.patch(
     "/{channel_id}",
@@ -96,6 +148,7 @@ async def rename_channel(
     )
 
     return ChannelResponse.model_validate(channel)
+
 
 @channel_router.delete(
     "/{channel_id}",

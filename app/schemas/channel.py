@@ -2,7 +2,12 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+)
 
 from app.models.channel_type import ChannelType
 
@@ -19,17 +24,21 @@ ChannelName = Annotated[
 
 class ChannelCreate(BaseModel):
     name: ChannelName
-    channel_type: ChannelType = ChannelType.TEXT
 
 
 class ChannelResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
     channel_id: UUID
-    guild_id: UUID
-    name: str = Field(validation_alias="channel_name")
+    guild_id: UUID | None
+    name: str | None = Field(
+        validation_alias="channel_name",
+    )
     channel_type: ChannelType
     created_at: datetime
+
 
 class ChannelUpdate(BaseModel):
     name: ChannelName
