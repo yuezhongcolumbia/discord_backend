@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from app.exceptions.channel import ChannelNotFoundError
+from app.exceptions.conversational_assistance import ConversationContextCatchingUpError
 from app.exceptions.guild import GuildNotFoundError, OwnerCannotLeaveGuildError, GuildOwnerRequiredError, \
     GuildMembershipRequiredError
 from app.exceptions.message import InvalidMessageCursorError
@@ -78,6 +79,21 @@ async def handle_kafka_publish_error(
     )
 
 
+async def handle_conversation_context_catching_up(
+        _request: Request,
+        _exception: ConversationContextCatchingUpError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "detail": (
+                "Conversation context is catching up. "
+                "Please try again."
+            ),
+        },
+    )
+
+
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -108,4 +124,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         KafkaPublishError,
         handle_kafka_publish_error,
+    )
+    app.add_exception_handler(
+        ConversationContextCatchingUpError,
+        handle_conversation_context_catching_up,
     )

@@ -13,6 +13,7 @@ from app.repositories.channel_repository import ChannelRepository
 from app.repositories.direct_message_repository import DirectMessageRepository
 from app.repositories.guild_repository import GuildRepository
 from app.repositories.message_repository import MessageRepository
+from app.services.conversational_assistance_service import ConversationalAssistanceService
 from app.services.guild_service import GuildService
 from app.services.channel_service import ChannelService
 from app.services.message_history_service import MessageHistoryService
@@ -86,4 +87,29 @@ def get_message_history_service(
             db_session,
         ),
         message_repository=message_repository,
+    )
+
+def get_conversational_assistance_service(
+    db_session: Annotated[
+        AsyncSession,
+        Depends(get_db_session),
+    ],
+    message_history_service: Annotated[
+        MessageHistoryService,
+        Depends(get_message_history_service),
+    ],
+) -> ConversationalAssistanceService:
+    return ConversationalAssistanceService(
+        channel_repository=ChannelRepository(db_session),
+        direct_message_repository=DirectMessageRepository(
+            db_session,
+        ),
+        message_history_service=message_history_service,
+        context_message_limit=(
+            settings.conversational_assistance_context_message_limit
+        ),
+        context_wait_timeout_seconds=(
+            settings
+            .conversational_assistance_context_wait_timeout_seconds
+        ),
     )
