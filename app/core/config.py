@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     cassandra_keyspace: str = "discord_messages"
 
     ollama_message_semantic_model_name: str = "qwen3:1.7b"
+    ollama_conversational_assistance_model_name: str = "qwen3:4b"
+    ollama_text_embedding_model_name: str = "nomic-embed-text"
     message_semantic_prompt_version: str = "sentiment-v1"
     langfuse_enabled: bool = False
     langfuse_public_key: str | None = None

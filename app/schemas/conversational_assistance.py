@@ -30,4 +30,7 @@ class ConversationalAssistanceResponse(BaseModel):
     risk_level: ConversationRiskLevel
     risk_reason: str
     concerns: list[str]
-    options: list[ConversationalAssistanceOption]
+    options: list[ConversationalAssistanceOption] = Field(
+        min_length=2,
+        max_length=3,
+    )

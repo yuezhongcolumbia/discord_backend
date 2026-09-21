@@ -99,9 +99,10 @@ class ConversationalAssistanceService:
 
         return await run_in_threadpool(
             self._conversational_assistant.assist,
-            request.draft,
-            messages,
-            playbooks,
+            draft=request.draft,
+            messages=messages,
+            playbooks=playbooks,
+            current_user_id=current_user_id,
         )
 
     async def get_context_messages(

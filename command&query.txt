@@ -22,7 +22,8 @@ dev:
 	user: 11111111-1111-1111-1111-111111111111
 	user2: 22222222-2222-2222-2222-222222222222
 	guild: 7a7d2551-76d4-4a31-a028-f81b9910b270
-	channel: 7316013f-90f9-4e25-9d60-4fb61b8a5348
+	channel(guild_text): 7316013f-90f9-4e25-9d60-4fb61b8a5348
+	channel(dm):db7b99f3-d039-4e2b-9a54-e221ac82bfd4
 
 pagination:
 	1. situation a: everything you need in current bucket. return next_cursor if has more

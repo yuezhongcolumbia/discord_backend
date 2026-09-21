@@ -1,0 +1,26 @@
+1. Asynchronous message flow
+   The API returns `202` after Kafka confirms delivery; Cassandra persistence and AI processing do not block message submission.
+
+2. Reliable persistence
+   Kafka producer idempotence, Cassandra primary-key upserts, partition pause/resume, exponential-backoff retries, and poison-message skipping.
+
+3. Message history
+   Cassandra stores messages by channel and daily bucket, with cursor pagination across buckets.
+
+4. Sentiment-labeling pipeline
+   A persisted-message event triggers local Ollama sentiment labeling, then batch-updates Cassandra.
+
+5. Direct messages and access control
+   DMs are a special channel type with a unique participant pair; DM creation is idempotent and DM access checks differ from guild membership checks.
+
+6. Conversation-context consistency
+   Conversational assistance verifies DM access and waits briefly for Kafka-to-Cassandra catch-up before using recent context.
+
+7. RAG retrieval
+   The draft plus recent conversation is embedded; pgvector retrieves relevant conversation playbooks as internal LLM guidance.
+
+8. Structured AI assistance
+   The API returns validated risk level, reason, concerns, and replacement message drafts.
+
+9. Observability
+   Langfuse traces assistant generations and exposes model load, prompt-processing, and token-generation latency.

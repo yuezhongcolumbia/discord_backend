@@ -5,11 +5,15 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.ollama_conversational_assistant import OllamaConversationalAssistant
+from app.ai.ollama_text_embedder import OllamaTextEmbedder
 from app.api.dependencies.cassandra import get_message_repository
 from app.api.dependencies.messaging import get_message_publisher
+from app.core.config import settings
 from app.db.session import get_db_session
 from app.messaging.message_publisher import MessagePublisher
 from app.repositories.channel_repository import ChannelRepository
+from app.repositories.conversation_playbook_repository import ConversationPlaybookRepository
 from app.repositories.direct_message_repository import DirectMessageRepository
 from app.repositories.guild_repository import GuildRepository
 from app.repositories.message_repository import MessageRepository
@@ -105,8 +109,23 @@ def get_conversational_assistance_service(
             db_session,
         ),
         message_history_service=message_history_service,
+        playbook_repository=ConversationPlaybookRepository(
+            db_session,
+        ),
+        text_embedder=OllamaTextEmbedder(
+            settings.ollama_text_embedding_model_name,
+        ),
+        conversational_assistant=(
+            OllamaConversationalAssistant(
+                settings
+                .ollama_conversational_assistance_model_name,
+            )
+        ),
         context_message_limit=(
             settings.conversational_assistance_context_message_limit
+        ),
+        playbook_limit=(
+            settings.conversational_assistance_playbook_limit
         ),
         context_wait_timeout_seconds=(
             settings

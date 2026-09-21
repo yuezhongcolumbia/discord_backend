@@ -1,8 +1,11 @@
+from functools import lru_cache
+
 from langfuse import Langfuse
 
 from app.core.config import settings
 
 
+@lru_cache
 def create_langfuse_client() -> Langfuse | None:
     if not settings.langfuse_enabled:
         return None
