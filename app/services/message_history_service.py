@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi.concurrency import run_in_threadpool
 
-from app.core.message_cursor import MessageCursor
+from app.domain.message_cursor import MessageCursor
 from app.domain.message import Message
 from app.domain.message_page import MessagePage
 from app.exceptions.channel import ChannelNotFoundError
@@ -127,6 +127,23 @@ class MessageHistoryService:
             items=items,
             next_cursor=next_cursor,
         )
+
+    async def get_recent_messages(
+        self,
+        channel_id: UUID,
+        current_user_id: UUID,
+        limit: int,
+    ) -> list[Message]:
+        page = await self.list_messages(
+            channel_id=channel_id,
+            current_user_id=current_user_id,
+            limit=limit,
+            cursor=None,
+        )
+
+        # Cassandra returns newest first.
+        # The LLM should receive the conversation oldest to newest.
+        return list(reversed(page.items))
 
     def _collect_messages(
         self,

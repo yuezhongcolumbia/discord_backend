@@ -5,10 +5,10 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    model_validator,
+    model_validator, computed_field,
 )
 
-
+from app.domain.message_cursor import MessageCursor
 
 
 class MessageCreate(BaseModel):
@@ -53,6 +53,14 @@ class MessageResponse(BaseModel):
     sentiment_model_name: str | None = None
     sentiment_prompt_version: str | None = None
 
+    @computed_field
+    @property
+    def message_cursor(self) -> str:
+        return MessageCursor(
+            bucket_date=self.created_at.date(),
+            created_at=self.created_at,
+            message_id=self.message_id,
+        ).encode()
 
 class MessagePageResponse(BaseModel):
     items: list[MessageResponse]

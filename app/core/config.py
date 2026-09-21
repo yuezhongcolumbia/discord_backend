@@ -14,11 +14,15 @@ class Settings(BaseSettings):
     cassandra_keyspace: str = "discord_messages"
 
     ollama_message_semantic_model_name: str = "qwen3:1.7b"
+    ollama_conversational_assistance_model_name: str = "qwen3:4b"
+    ollama_text_embedding_model_name: str = "nomic-embed-text"
+    message_semantic_prompt_version: str = "sentiment-v1"
     langfuse_enabled: bool = False
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
     langfuse_base_url: str = "https://us.cloud.langfuse.com"
 
+    # ---kafka setting---
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_message_accepted_topic: str = "discord.message.accepted.v1"
 
@@ -59,7 +63,14 @@ class Settings(BaseSettings):
 
     kafka_message_semantic_flush_interval_seconds: float = 60.0
 
-    message_semantic_prompt_version: str = "sentiment-v1"
+    # ---conversation-assistance setting---
+    conversational_assistance_context_message_limit: int = 30
+    conversational_assistance_playbook_limit: int = 3
+    # Maximum time the API waits for Cassandra to catch up to the
+    # client-provided context cursor before returning 503.
+    conversational_assistance_context_wait_timeout_seconds: float = (
+        1.0
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
