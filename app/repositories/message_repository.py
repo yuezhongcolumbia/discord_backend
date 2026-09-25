@@ -143,6 +143,19 @@ class MessageRepository:
             )
         )
 
+        self._select_message_exists: PreparedStatement = (
+            self._session.prepare(
+                """
+                SELECT message_id
+                FROM messages_by_channel_bucket
+                WHERE channel_id = ?
+                  AND bucket_date = ?
+                  AND created_at = ?
+                  AND message_id = ?
+                """
+            )
+        )
+
     def save(
         self,
         message: Message,
@@ -280,6 +293,25 @@ class MessageRepository:
             self._row_to_message(row)
             for row in result
         ]
+
+    def contains_message(
+            self,
+            channel_id: UUID,
+            bucket_date: date,
+            created_at: datetime,
+            message_id: UUID,
+    ) -> bool:
+        result = self._session.execute(
+            self._select_message_exists,
+            (
+                channel_id,
+                bucket_date,
+                created_at,
+                message_id,
+            ),
+        )
+
+        return result.one() is not None
 
     @classmethod
     def _row_to_message(
