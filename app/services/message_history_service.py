@@ -128,22 +128,6 @@ class MessageHistoryService:
             next_cursor=next_cursor,
         )
 
-    async def get_recent_messages(
-        self,
-        channel_id: UUID,
-        current_user_id: UUID,
-        limit: int,
-    ) -> list[Message]:
-        page = await self.list_messages(
-            channel_id=channel_id,
-            current_user_id=current_user_id,
-            limit=limit,
-            cursor=None,
-        )
-
-        # Cassandra returns newest first.
-        # The LLM should receive the conversation oldest to newest.
-        return list(reversed(page.items))
 
     def _collect_messages(
         self,
@@ -211,6 +195,35 @@ class MessageHistoryService:
                 )
 
         return messages
+
+    async def contains_cursor(
+            self,
+            channel_id: UUID,
+            context_cursor: MessageCursor,
+    ) -> bool:
+        return await run_in_threadpool(
+            self._message_repository.contains_message,
+            channel_id,
+            context_cursor.bucket_date,
+            context_cursor.created_at,
+            context_cursor.message_id,
+        )
+
+    async def get_recent_messages(
+            self,
+            channel_id: UUID,
+            limit: int,
+    ) -> list[Message]:
+        messages = await run_in_threadpool(
+            self._collect_messages,
+            channel_id,
+            limit,
+            None,
+        )
+
+        # Cassandra returns newest first.
+        # The LLM should read the conversation oldest to newest.
+        return list(reversed(messages[:limit]))
 
     @staticmethod
     def _decode_cursor(

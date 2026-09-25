@@ -17,6 +17,7 @@ from app.repositories.conversation_playbook_repository import ConversationPlaybo
 from app.repositories.direct_message_repository import DirectMessageRepository
 from app.repositories.guild_repository import GuildRepository
 from app.repositories.message_repository import MessageRepository
+from app.repositories.message_search_index_repository import MessageSearchIndexRepository
 from app.services.conversational_assistance_service import ConversationalAssistanceService
 from app.services.guild_service import GuildService
 from app.services.channel_service import ChannelService
@@ -109,17 +110,22 @@ def get_conversational_assistance_service(
             db_session,
         ),
         message_history_service=message_history_service,
+        message_search_index_repository=MessageSearchIndexRepository(
+            db_session,
+        ),
         playbook_repository=ConversationPlaybookRepository(
             db_session,
         ),
         text_embedder=OllamaTextEmbedder(
             settings.ollama_text_embedding_model_name,
         ),
-        conversational_assistant=(
-            OllamaConversationalAssistant(
-                settings
-                .ollama_conversational_assistance_model_name,
-            )
+        conversational_assistant=OllamaConversationalAssistant(
+            tool_model_name=(
+                settings. ollama_conversational_assistance_tool_model_name
+            ),
+            coaching_model_name=(
+                settings.ollama_conversational_assistance_model_name
+            ),
         ),
         context_message_limit=(
             settings.conversational_assistance_context_message_limit

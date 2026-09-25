@@ -24,6 +24,21 @@ def create_kafka_message_persistence_consumer() -> Consumer:
         }
     )
 
+def create_kafka_message_search_index_consumer() -> Consumer:
+    return Consumer(
+        {
+            "bootstrap.servers": settings.kafka_bootstrap_servers,
+            "group.id": (
+                settings.kafka_message_search_index_group_id
+            ),
+            "enable.auto.commit": False,
+            "auto.offset.reset": (
+                settings.kafka_consumer_auto_offset_reset
+            ),
+            "allow.auto.create.topics": False,
+        }
+    )
+
 def create_kafka_message_semantic_consumer() -> Consumer:
     return Consumer(
         {

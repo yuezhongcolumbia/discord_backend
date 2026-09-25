@@ -4,6 +4,7 @@ from app.models.direct_message_channel import DirectMessageChannel
 from app.models.guild import Guild
 from app.models.guild_membership import GuildMembership
 from app.models.user import User
+from app.models.message_search_index import  MessageSearchIndex
 
 __all__ = [
             "Channel",
@@ -11,5 +12,6 @@ __all__ = [
             "User",
            "Guild",
            "GuildMembership",
-            "ConversationPlaybook"
+            "ConversationPlaybook",
+            "MessageSearchIndex",
 ]
