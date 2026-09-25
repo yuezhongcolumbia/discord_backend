@@ -154,7 +154,10 @@ class ConversationalAssistanceService:
 
         @tool
         async def get_recent_messages() -> str:
-            """Retrieve recent messages in this conversation."""
+            """Retrieve the latest conversation messages.
+
+            Use this first to inspect the immediate conversation context.
+            """
 
             remaining = remaining_context_limit()
 
@@ -194,12 +197,16 @@ class ConversationalAssistanceService:
                     min_length=1,
                     max_length=500,
                     description=(
-                            "Semantic search query for relevant earlier "
-                            "conversation messages."
+                            "A focused semantic query describing the draft topic, "
+                            "concern, or requested action."
                     ),
                 ),
         ) -> str:
-            """Search relevant earlier messages in this conversation."""
+            """Search earlier historical messages semantically.
+
+            Use this when recent messages do not directly relate to the draft,
+            or when earlier context may be needed.
+            """
 
             remaining = remaining_context_limit()
 

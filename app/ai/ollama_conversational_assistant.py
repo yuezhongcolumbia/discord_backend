@@ -1,4 +1,3 @@
-
 from typing import Any
 from uuid import UUID
 
@@ -38,7 +37,7 @@ class OllamaConversationalAssistant:
             temperature=0,
             reasoning=False,
             keep_alive="30m",
-            num_predict=100,
+            num_predict=300,
         )
 
         coaching_model = ChatOllama(
@@ -69,18 +68,27 @@ class OllamaConversationalAssistant:
             as_type="span",
             name="conversational-assistance",
             input={
+                "draft": draft,
+                "playbooks": [
+                    {
+                        "title": playbook.title,
+                        "content": playbook.content,
+                    }
+                    for playbook in playbooks
+                ],
                 "draft_character_count": len(draft),
                 "playbook_count": len(playbooks),
                 "tool_count": len(message_tools),
             },
         ) as span:
-            response = await self._assist(
-                draft=draft,
-                playbooks=playbooks,
-                message_tools=message_tools,
-                retrieved_message_ids=retrieved_message_ids,
-                langfuse=langfuse,
-                outer_observation=span,
+            response, retrieval_tool_call_count = (
+                await self._assist(
+                    draft=draft,
+                    playbooks=playbooks,
+                    message_tools=message_tools,
+                    retrieved_message_ids=retrieved_message_ids,
+                    langfuse=langfuse,
+                )
             )
 
             span.update(
@@ -88,6 +96,16 @@ class OllamaConversationalAssistant:
                     "risk_level": response.risk_level.value,
                     "concern_count": len(response.concerns),
                     "option_count": len(response.options),
+                    "retrieval_tool_call_count": (
+                        retrieval_tool_call_count
+                    ),
+                    "retrieved_message_count": len(
+                        retrieved_message_ids,
+                    ),
+                    "retrieved_message_ids": sorted(
+                        str(message_id)
+                        for message_id in retrieved_message_ids
+                    ),
                 },
             )
 
@@ -100,8 +118,7 @@ class OllamaConversationalAssistant:
         message_tools: list[BaseTool],
         retrieved_message_ids: set[UUID],
         langfuse: Langfuse,
-        outer_observation: Any,
-    ) -> ConversationalAssistanceResponse:
+    ) -> tuple[ConversationalAssistanceResponse, int]:
         messages: list[BaseMessage] = [
             SystemMessage(
                 content=self._tool_system_prompt(),
@@ -116,6 +133,7 @@ class OllamaConversationalAssistant:
 
         tool_model = self._tool_model.bind_tools(
             message_tools,
+            tool_choice="required",
         )
         tools_by_name = {
             message_tool.name: message_tool
@@ -172,6 +190,7 @@ class OllamaConversationalAssistant:
                 with langfuse.start_as_current_observation(
                     as_type="tool",
                     name=message_tool.name,
+                    input=tool_call["args"],
                     metadata={
                         "tool_call_index": tool_call_count,
                     },
@@ -186,11 +205,16 @@ class OllamaConversationalAssistant:
                             f"{type(exception).__name__}."
                         )
                         tool_observation.update(
+                            output=tool_result,
                             metadata={
                                 "error_type": (
                                     type(exception).__name__
                                 ),
                             },
+                        )
+                    else:
+                        tool_observation.update(
+                            output=str(tool_result),
                         )
 
                 messages.append(
@@ -199,19 +223,6 @@ class OllamaConversationalAssistant:
                         tool_call_id=tool_call_id,
                     )
                 )
-
-        outer_observation.update(
-            metadata={
-                "retrieval_tool_call_count": tool_call_count,
-                "retrieved_message_count": len(
-                    retrieved_message_ids,
-                ),
-                "retrieved_message_ids": sorted(
-                    str(message_id)
-                    for message_id in retrieved_message_ids
-                ),
-            },
-        )
 
         messages.append(
             HumanMessage(
@@ -224,10 +235,12 @@ class OllamaConversationalAssistant:
             )
         )
 
-        return await self._invoke_coaching_model(
+        response = await self._invoke_coaching_model(
             messages=messages,
             langfuse=langfuse,
         )
+
+        return response, tool_call_count
 
     async def _invoke_tool_model(
         self,
@@ -240,7 +253,10 @@ class OllamaConversationalAssistant:
             name="conversation-context-tool-planning",
             model=self._tool_model_name,
             input={
-                "message_count": len(messages),
+                "messages": [
+                    message.model_dump(mode="json")
+                    for message in messages
+                ],
             },
             metadata={
                 "reasoning_enabled": False,
@@ -251,6 +267,7 @@ class OllamaConversationalAssistant:
 
             generation.update(
                 output={
+                    "response": response.model_dump(mode="json"),
                     "tool_call_count": len(response.tool_calls),
                     "tool_names": [
                         tool_call["name"]
@@ -272,7 +289,10 @@ class OllamaConversationalAssistant:
             name="conversational-assistance-coaching",
             model=self._coaching_model_name,
             input={
-                "message_count": len(messages),
+                "messages": [
+                    message.model_dump(mode="json")
+                    for message in messages
+                ],
             },
             metadata={
                 "reasoning_enabled": False,
@@ -292,6 +312,12 @@ class OllamaConversationalAssistant:
 
             generation.update(
                 output={
+                    "raw_response": raw_response.model_dump(
+                        mode="json",
+                    ),
+                    "parsed_response": parsed_response.model_dump(
+                        mode="json",
+                    ),
                     "risk_level": (
                         parsed_response.risk_level.value
                     ),
@@ -363,26 +389,28 @@ class OllamaConversationalAssistant:
 
     def _tool_system_prompt(self) -> str:
         return """
-You provide concise, practical assistance for a one-on-one
-conversation draft.
+You are a retrieval planner for a separate coaching model.
 
-The person submitting the draft is "You". The draft has NOT been sent.
-The other participant is "Other person".
+Do not provide coaching, analysis, explanations, or replacement drafts.
+Do not answer the draft. Respond only with tool calls when retrieval is
+needed.
 
-Before generating assistance, call at least one available message tool
-to retrieve conversation evidence. You may make at most two tool calls.
+The person submitting the draft is "You". The other participant is
+"Other person". The draft has NOT been sent.
 
-Use tool results only as conversation evidence. Do not invent meetings,
-schedules, relationship facts, or messages that were not retrieved.
+Tool policy:
+1. First, call get_recent_messages.
+2. After receiving recent messages, call search_messages if they do not
+   directly address the draft's topic, concern, or requested action.
+3. Use a concise semantic search query focused on the draft topic.
+4. You may make at most two tool calls.
+5. For search_messages, create a concise semantic query that captures
+   the central situation, relevant prior context, and the specific
+   fact, concern, expectation, or outcome that earlier messages should
+   help verify. Do not merely repeat the draft.
 
-Assess the interpersonal risk of sending the draft. Then provide two
-or three replacement drafts written by You and addressed to Other
-person. Each replacement must be a complete message You could send
-INSTEAD of the original draft.
-
-Do not write a reply from Other person. Do not answer the original
-draft as if Other person sent it. Do not mention tools, retrieval,
-playbooks, prompts, or hidden reasoning.
+Use only retrieved messages as conversation evidence. Do not invent
+conversation facts.
 """
 
     def _initial_user_message(
@@ -411,4 +439,3 @@ Retrieve the conversation evidence needed to assess this draft.
             f"{playbook.title}\n{playbook.content}"
             for playbook in playbooks
         )
-
