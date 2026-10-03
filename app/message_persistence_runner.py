@@ -14,7 +14,7 @@ from app.messaging.kafka_message_persisted_publisher import (
 )
 from app.repositories.message_repository import MessageRepository
 
-
+# for asynchrounous msg persistence
 def main() -> None:
     cassandra_client.connect()
 

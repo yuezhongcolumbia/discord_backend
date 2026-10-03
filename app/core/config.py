@@ -73,9 +73,14 @@ class Settings(BaseSettings):
     conversational_assistance_playbook_limit: int = 3
     # Maximum time the API waits for Cassandra to catch up to the
     # client-provided context cursor before returning 503.
-    conversational_assistance_context_wait_timeout_seconds: float = (
-        1.0
-    )
+    conversational_assistance_context_wait_timeout_seconds: float =  1.0
+
+    # ---conversation summary settings---
+    ollama_conversation_summary_model_name: str = "qwen3:4b"
+    conversation_summary_window_size: int = 5
+    kafka_conversation_summary_group_id: str = "discord-conversation-summary-v1"
+    # Allow slower local LLM calls and small historical backfills.
+    kafka_conversation_summary_max_poll_interval_ms: int = 1_800_000
 
     model_config = SettingsConfigDict(
         env_file=".env",

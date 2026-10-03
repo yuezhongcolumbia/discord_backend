@@ -51,3 +51,22 @@ def create_kafka_message_semantic_consumer() -> Consumer:
             "allow.auto.create.topics": False,
         }
     )
+
+def create_kafka_conversation_summary_consumer() -> Consumer:
+    return Consumer(
+        {
+            "bootstrap.servers": settings.kafka_bootstrap_servers,
+            "group.id": (
+                settings.kafka_conversation_summary_group_id
+            ),
+            "enable.auto.commit": False,
+            "auto.offset.reset": (
+                settings.kafka_consumer_auto_offset_reset
+            ),
+            "allow.auto.create.topics": False,
+            "max.poll.interval.ms": (
+                settings
+                .kafka_conversation_summary_max_poll_interval_ms
+            ),
+        }
+    )

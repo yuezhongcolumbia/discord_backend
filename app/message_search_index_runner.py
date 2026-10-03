@@ -15,7 +15,7 @@ from app.messaging.kafka import (
     create_kafka_message_search_index_consumer,
 )
 
-
+# for embedding msg and persist in postgresql, used for semantic search
 async def main() -> None:
     kafka_consumer = (
         create_kafka_message_search_index_consumer()

@@ -15,7 +15,7 @@ from app.observability.langfuse_client import (
     create_langfuse_client,
 )
 from app.repositories.message_repository import MessageRepository
-
+# for semantic labeling message, upsert in msg table in cassandra
 def main() -> None:
     langfuse_client = None
 

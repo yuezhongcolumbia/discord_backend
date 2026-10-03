@@ -70,6 +70,81 @@ class MessageRepository:
         )
 
         # ---------- Read statements ----------
+        self._select_earliest_bucket: PreparedStatement = (
+            self._session.prepare(
+                """
+                SELECT bucket_date
+                FROM message_buckets_by_channel
+                WHERE channel_id = ?
+                ORDER BY bucket_date ASC
+                LIMIT 1
+                """
+            )
+        )
+
+        self._select_next_bucket: PreparedStatement = (
+            self._session.prepare(
+                """
+                SELECT bucket_date
+                FROM message_buckets_by_channel
+                WHERE channel_id = ?
+                  AND bucket_date > ?
+                ORDER BY bucket_date ASC
+                LIMIT 1
+                """
+            )
+        )
+
+        self._select_messages_ascending: PreparedStatement = (
+            self._session.prepare(
+                """
+                SELECT
+                    channel_id,
+                    bucket_date,
+                    created_at,
+                    message_id,
+                    author_id,
+                    edited_at,
+                    sentiment,
+                    sentiment_labeled_at,
+                    sentiment_model_name,
+                    sentiment_prompt_version,
+                    message_content,
+                    attachment_ids
+                FROM messages_by_channel_bucket
+                WHERE channel_id = ?
+                  AND bucket_date = ?
+                ORDER BY created_at ASC, message_id ASC
+                LIMIT ?
+                """
+            )
+        )
+
+        self._select_messages_after: PreparedStatement = (
+            self._session.prepare(
+                """
+                SELECT
+                    channel_id,
+                    bucket_date,
+                    created_at,
+                    message_id,
+                    author_id,
+                    edited_at,
+                    sentiment,
+                    sentiment_labeled_at,
+                    sentiment_model_name,
+                    sentiment_prompt_version,
+                    message_content,
+                    attachment_ids
+                FROM messages_by_channel_bucket
+                WHERE channel_id = ?
+                  AND bucket_date = ?
+                  AND (created_at, message_id) > (?, ?)
+                ORDER BY created_at ASC, message_id ASC
+                LIMIT ?
+                """
+            )
+        )
 
         self._select_latest_bucket: PreparedStatement = (
             self._session.prepare(
@@ -230,6 +305,42 @@ class MessageRepository:
 
         return self._to_python_date(row.bucket_date)
 
+    def get_earliest_bucket(
+        self,
+        channel_id: UUID,
+    ) -> date | None:
+        result = self._session.execute(
+            self._select_earliest_bucket,
+            (channel_id,),
+        )
+
+        row = result.one()
+
+        if row is None:
+            return None
+
+        return self._to_python_date(row.bucket_date)
+
+    def get_next_bucket(
+        self,
+        channel_id: UUID,
+        after_bucket_date: date,
+    ) -> date | None:
+        result = self._session.execute(
+            self._select_next_bucket,
+            (
+                channel_id,
+                after_bucket_date,
+            ),
+        )
+
+        row = result.one()
+
+        if row is None:
+            return None
+
+        return self._to_python_date(row.bucket_date)
+
     def get_previous_bucket(
         self,
         channel_id: UUID,
@@ -293,6 +404,81 @@ class MessageRepository:
             self._row_to_message(row)
             for row in result
         ]
+
+    def get_messages_after(
+        self,
+        channel_id: UUID,
+        after_bucket_date: date | None,
+        after_created_at: datetime | None,
+        after_message_id: UUID | None,
+        limit: int,
+    ) -> list[Message]:
+        if limit < 1:
+            raise ValueError(
+                "Message limit must be at least one.",
+            )
+
+        has_cursor = after_bucket_date is not None
+
+        if has_cursor != (
+            after_created_at is not None
+            and after_message_id is not None
+        ):
+            raise ValueError(
+                "Message cursor fields must be provided together.",
+            )
+
+        current_bucket_date = (
+            after_bucket_date
+            if has_cursor
+            else self.get_earliest_bucket(channel_id)
+        )
+
+        messages: list[Message] = []
+        is_first_bucket = True
+
+        while (
+            current_bucket_date is not None
+            and len(messages) < limit
+        ):
+            remaining = limit - len(messages)
+
+            if is_first_bucket and has_cursor:
+                result = self._session.execute(
+                    self._select_messages_after,
+                    (
+                        channel_id,
+                        current_bucket_date,
+                        after_created_at,
+                        after_message_id,
+                        remaining,
+                    ),
+                )
+            else:
+                result = self._session.execute(
+                    self._select_messages_ascending,
+                    (
+                        channel_id,
+                        current_bucket_date,
+                        remaining,
+                    ),
+                )
+
+            messages.extend(
+                self._row_to_message(row)
+                for row in result
+            )
+
+            if len(messages) >= limit:
+                break
+
+            current_bucket_date = self.get_next_bucket(
+                channel_id=channel_id,
+                after_bucket_date=current_bucket_date,
+            )
+            is_first_bucket = False
+
+        return messages
 
     def contains_message(
             self,
