@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.ollama_conversational_assistant import OllamaConversationalAssistant
@@ -15,9 +15,12 @@ from app.messaging.message_publisher import MessagePublisher
 from app.repositories.channel_repository import ChannelRepository
 from app.repositories.conversation_playbook_repository import ConversationPlaybookRepository
 from app.repositories.direct_message_repository import DirectMessageRepository
+from app.repositories.elasticsearch.message_keyword_index_repository import MessageKeywordIndexRepository
 from app.repositories.guild_repository import GuildRepository
 from app.repositories.message_repository import MessageRepository
 from app.repositories.message_search_index_repository import MessageSearchIndexRepository
+from app.repositories.conversation_summary_repository import ConversationSummaryRepository
+from app.schemas.conversational_assistance import ConversationalAssistanceRequest
 from app.services.conversational_assistance_service import ConversationalAssistanceService
 from app.services.guild_service import GuildService
 from app.services.channel_service import ChannelService
@@ -95,6 +98,7 @@ def get_message_history_service(
     )
 
 def get_conversational_assistance_service(
+    request: Request,
     db_session: Annotated[
         AsyncSession,
         Depends(get_db_session),
@@ -113,6 +117,13 @@ def get_conversational_assistance_service(
         message_search_index_repository=MessageSearchIndexRepository(
             db_session,
         ),
+        message_keyword_index_repository=MessageKeywordIndexRepository(
+            client=request.app.state.elasticsearch_client,
+            index_name=settings.elasticsearch_message_index_name,
+        ),
+        conversation_summary_repository=(
+            ConversationSummaryRepository(db_session)
+        ),
         playbook_repository=ConversationPlaybookRepository(
             db_session,
         ),
@@ -120,12 +131,18 @@ def get_conversational_assistance_service(
             settings.ollama_text_embedding_model_name,
         ),
         conversational_assistant=OllamaConversationalAssistant(
-            tool_model_name=(
-                settings. ollama_conversational_assistance_tool_model_name
-            ),
             coaching_model_name=(
                 settings.ollama_conversational_assistance_model_name
             ),
+        ),
+        retrieval_top_k=(
+            settings.conversational_assistance_retrieval_top_k
+        ),
+        fusion_top_k=(
+            settings.conversational_assistance_fusion_top_k
+        ),
+        rrf_rank_constant=(
+            settings.conversational_assistance_rrf_rank_constant
         ),
         context_message_limit=(
             settings.conversational_assistance_context_message_limit

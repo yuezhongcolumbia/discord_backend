@@ -92,3 +92,29 @@ class ConversationSummaryRepository:
         )
 
         await self._session.execute(statement)
+
+
+    async def find_similar(
+        self,
+        channel_id: UUID,
+        query_embedding: list[float],
+        limit: int,
+    ) -> list[ConversationSummary]:
+        statement = (
+            select(ConversationSummary)
+            .where(
+                ConversationSummary.channel_id == channel_id,
+            )
+            .order_by(
+                ConversationSummary.embedding.cosine_distance(
+                    query_embedding,
+                ),
+                ConversationSummary.window_end_created_at.desc(),
+                ConversationSummary.summary_id,
+            )
+            .limit(limit)
+        )
+
+        result = await self._session.execute(statement)
+
+        return list(result.scalars().all())

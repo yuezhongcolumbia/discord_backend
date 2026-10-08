@@ -8,26 +8,39 @@ from app.api.exception_handlers import register_exception_handlers
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.cassandra import cassandra_client
+from app.db.elasticsearch import create_elasticsearch_client
 from app.messaging.kafka import create_kafka_producer
-from app.messaging.kafka_message_accepted_publisher import KafkaMessageAcceptedPublisher
+from app.messaging.kafka_message_accepted_publisher import (
+    KafkaMessageAcceptedPublisher,
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await run_in_threadpool(cassandra_client.connect)
+
     try:
         kafka_producer = create_kafka_producer()
 
-        message_publisher = KafkaMessageAcceptedPublisher(
-            producer=kafka_producer,
-            topic=settings.kafka_message_accepted_topic,
-            publish_wait_timeout_seconds=settings.kafka_publish_wait_timeout_seconds,
-        )
-
-        app.state.message_publisher = message_publisher
-
         try:
-            yield
+            elasticsearch_client = create_elasticsearch_client()
+
+            try:
+                app.state.elasticsearch_client = elasticsearch_client
+
+                app.state.message_publisher = (
+                    KafkaMessageAcceptedPublisher(
+                        producer=kafka_producer,
+                        topic=settings.kafka_message_accepted_topic,
+                        publish_wait_timeout_seconds=(
+                            settings.kafka_publish_wait_timeout_seconds
+                        ),
+                    )
+                )
+
+                yield
+            finally:
+                await elasticsearch_client.close()
         finally:
             await run_in_threadpool(
                 kafka_producer.flush,
@@ -36,9 +49,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         await run_in_threadpool(cassandra_client.close)
 
+
 app = FastAPI(
     title=settings.app_name,
-    lifespan = lifespan,
+    lifespan=lifespan,
 )
 
 register_exception_handlers(app)

@@ -1,11 +1,8 @@
-
 import asyncio
 from time import monotonic
 from uuid import UUID
 
 from fastapi.concurrency import run_in_threadpool
-from langchain_core.tools import BaseTool, tool
-from pydantic import Field
 
 from app.ai.ollama_conversational_assistant import (
     OllamaConversationalAssistant,
@@ -18,14 +15,24 @@ from app.exceptions.conversational_assistance import (
     ConversationContextCatchingUpError,
 )
 from app.exceptions.message import InvalidMessageCursorError
-from app.models import MessageSearchIndex
 from app.models.channel_type import ChannelType
+from app.models.conversation_playbook import ConversationPlaybook
+from app.models.conversation_summary import ConversationSummary
+from app.models.message_search_index import MessageSearchIndex
+from app.observability.langfuse_client import create_langfuse_client
 from app.repositories.channel_repository import ChannelRepository
 from app.repositories.conversation_playbook_repository import (
     ConversationPlaybookRepository,
 )
+from app.repositories.conversation_summary_repository import (
+    ConversationSummaryRepository,
+)
 from app.repositories.direct_message_repository import (
     DirectMessageRepository,
+)
+from app.repositories.elasticsearch.message_keyword_index_repository import (
+    MessageKeywordIndexRepository,
+    MessageKeywordSearchResult,
 )
 from app.repositories.message_search_index_repository import (
     MessageSearchIndexRepository,
@@ -34,53 +41,67 @@ from app.schemas.conversational_assistance import (
     ConversationalAssistanceRequest,
     ConversationalAssistanceResponse,
 )
-from app.services.message_history_service import (
-    MessageHistoryService,
-)
+from app.services.message_history_service import MessageHistoryService
 
-# 1. Verifies that the user can access the requested DM channel.
-# 2. Waits until Cassandra contains the cursor watermark.
-# 3. Creates two server-scoped message retrieval tools:
-#    - get_recent_messages reads the newest messages before the cursor.
-#    - search_messages embeds an LLM-generated query and searches
-#      relevant earlier messages before the cursor.
-#    - Both tools use the verified channel, user, and cursor internally;
-#      the LLM cannot change their scope.
-#    - Both share one message-id collection to deduplicate results and
-#      cap the total retrieved context size.
-# 4. Retrieves draft-relevant playbooks and runs the assistant.
 
 class ConversationalAssistanceService:
-
     def __init__(
         self,
         channel_repository: ChannelRepository,
         direct_message_repository: DirectMessageRepository,
         message_history_service: MessageHistoryService,
         message_search_index_repository: MessageSearchIndexRepository,
+        message_keyword_index_repository: MessageKeywordIndexRepository,
+        conversation_summary_repository: ConversationSummaryRepository,
         playbook_repository: ConversationPlaybookRepository,
         text_embedder: OllamaTextEmbedder,
         conversational_assistant: OllamaConversationalAssistant,
         context_message_limit: int,
+        retrieval_top_k: int,
+        fusion_top_k: int,
+        rrf_rank_constant: int,
         playbook_limit: int,
         context_wait_timeout_seconds: float,
     ) -> None:
+        if retrieval_top_k < 1:
+            raise ValueError(
+                "Retrieval top K must be at least one.",
+            )
+
+        if fusion_top_k < 1:
+            raise ValueError(
+                "Fusion top K must be at least one.",
+            )
+
+        if rrf_rank_constant < 1:
+            raise ValueError(
+                "RRF rank constant must be at least one.",
+            )
+
+        if context_message_limit < 1:
+            raise ValueError(
+                "Context message limit must be at least one.",
+            )
+
         self._channel_repository = channel_repository
-        self._direct_message_repository = (
-            direct_message_repository
-        )
-        self._message_history_service = (
-            message_history_service
-        )
+        self._direct_message_repository = direct_message_repository
+        self._message_history_service = message_history_service
         self._message_search_index_repository = (
             message_search_index_repository
         )
+        self._message_keyword_index_repository = (
+            message_keyword_index_repository
+        )
+        self._conversation_summary_repository = (
+            conversation_summary_repository
+        )
         self._playbook_repository = playbook_repository
         self._text_embedder = text_embedder
-        self._conversational_assistant = (
-            conversational_assistant
-        )
+        self._conversational_assistant = conversational_assistant
         self._context_message_limit = context_message_limit
+        self._retrieval_top_k = retrieval_top_k
+        self._fusion_top_k = fusion_top_k
+        self._rrf_rank_constant = rrf_rank_constant
         self._playbook_limit = playbook_limit
         self._context_wait_timeout_seconds = (
             context_wait_timeout_seconds
@@ -101,155 +122,328 @@ class ConversationalAssistanceService:
             request.context_through_cursor,
         )
 
+        # The cursor is a persistence watermark, not a retrieval bound.
         await self._wait_for_context_cursor(
             channel_id=channel_id,
             context_cursor=context_cursor,
         )
 
-        playbooks = await self._find_draft_playbooks(
-            draft=request.draft,
-        )
-        message_tools, retrieved_message_ids = (
-            self._create_message_tools(
-                channel_id=channel_id,
-                current_user_id=current_user_id,
-            )
-        )
+        langfuse = create_langfuse_client()
 
-        return await self._conversational_assistant.assist(
-            draft=request.draft,
-            playbooks=playbooks,
-            message_tools=message_tools,
-            retrieved_message_ids=retrieved_message_ids,
-        )
+        with langfuse.start_as_current_observation(
+            as_type="span",
+            name="conversational-assistance",
+            input={
+                "draft": request.draft,
+                "channel_id": str(channel_id),
+                "current_user_id": str(current_user_id),
+            },
+            metadata={
+                "retrieval_mode": "fixed_pipeline",
+                "fusion_method": "rrf",
+                "retrieval_top_k": self._retrieval_top_k,
+                "fusion_top_k": self._fusion_top_k,
+                "rrf_rank_constant": self._rrf_rank_constant,
+                "context_message_limit": self._context_message_limit,
+            },
+        ) as span:
+            draft_embedding = await run_in_threadpool(
+                self._text_embedder.embed,
+                request.draft,
+            )
+
+            playbooks = await self._find_draft_playbooks(
+                draft_embedding=draft_embedding,
+            )
+
+            (
+                recent_messages,
+                semantic_messages,
+                keyword_messages,
+                summaries,
+            ) = await self._retrieve_context(
+                channel_id=channel_id,
+                draft=request.draft,
+                draft_embedding=draft_embedding,
+            )
+
+            fused_messages = self._fuse_messages(
+                semantic_messages=semantic_messages,
+                keyword_messages=keyword_messages,
+                limit=self._fusion_top_k,
+                rank_constant=self._rrf_rank_constant,
+            )
+
+            messages_by_id: dict[
+                UUID,
+                Message | MessageSearchIndex | MessageKeywordSearchResult,
+            ] = {}
+
+            # Prioritize fused historical evidence, then add recent context.
+            for message in [*fused_messages, *recent_messages]:
+                messages_by_id.setdefault(
+                    message.message_id,
+                    message,
+                )
+
+            selected_messages = list(messages_by_id.values())[
+                :self._context_message_limit
+            ]
+
+            # Present selected messages chronologically after selection.
+            selected_messages.sort(
+                key=lambda message: (
+                    message.created_at,
+                    message.message_id,
+                ),
+            )
+
+            retrieval_output = {
+                "retrieval_operation_count": 4,
+                "recent_message_ids": [
+                    str(message.message_id)
+                    for message in recent_messages
+                ],
+                "semantic_message_ids": [
+                    str(message.message_id)
+                    for message in semantic_messages
+                ],
+                "keyword_message_ids": [
+                    str(message.message_id)
+                    for message in keyword_messages
+                ],
+                "fused_message_ids": [
+                    str(message.message_id)
+                    for message in fused_messages
+                ],
+                "retrieved_message_count": len(selected_messages),
+                "retrieved_message_ids": [
+                    str(message.message_id)
+                    for message in selected_messages
+                ],
+                "retrieved_summary_count": len(summaries),
+                "retrieved_summary_ids": [
+                    str(summary.summary_id)
+                    for summary in summaries
+                ],
+            }
+
+            # Keep retrieval results if coaching subsequently fails.
+            span.update(output=retrieval_output)
+
+            response = await self._conversational_assistant.assist(
+                draft=request.draft,
+                playbooks=playbooks,
+                message_context=self._format_messages(
+                    messages=selected_messages,
+                    current_user_id=current_user_id,
+                ),
+                summary_context=self._format_summaries(summaries),
+                current_user_id=str(current_user_id),
+            )
+
+            span.update(
+                output={
+                    **retrieval_output,
+                    "risk_level": response.risk_level.value,
+                    "concern_count": len(response.concerns),
+                    "option_count": len(response.options),
+                },
+            )
+
+            return response
 
     async def _find_draft_playbooks(
         self,
-        draft: str,
-    ) -> list:
-        draft_embedding = await run_in_threadpool(
-            self._text_embedder.embed,
-            draft,
-        )
-
+        draft_embedding: list[float],
+    ) -> list[ConversationPlaybook]:
         return await self._playbook_repository.find_similar(
             query_embedding=draft_embedding,
             limit=self._playbook_limit,
         )
 
-    def _create_message_tools(
-            self,
-            channel_id: UUID,
-            current_user_id: UUID,
-    ) -> tuple[list[BaseTool], set[UUID]]:
-        retrieved_message_ids: set[UUID] = set()
+    async def _find_draft_summaries(
+        self,
+        channel_id: UUID,
+        draft_embedding: list[float],
+        limit: int,
+    ) -> list[ConversationSummary]:
+        return await self._conversation_summary_repository.find_similar(
+            channel_id=channel_id,
+            query_embedding=draft_embedding,
+            limit=limit,
+        )
 
-        max_messages_per_tool_call = 3
+    async def _retrieve_context(
+        self,
+        channel_id: UUID,
+        draft: str,
+        draft_embedding: list[float],
+    ) -> tuple[
+        list[Message],
+        list[MessageSearchIndex],
+        list[MessageKeywordSearchResult],
+        list[ConversationSummary],
+    ]:
+        langfuse = create_langfuse_client()
 
-        def remaining_context_limit() -> int:
-            return (
-                    self._context_message_limit
-                    - len(retrieved_message_ids)
-            )
-
-        @tool
-        async def get_recent_messages() -> str:
-            """Retrieve the latest conversation messages.
-
-            Use this first to inspect the immediate conversation context.
-            """
-
-            remaining = remaining_context_limit()
-
-            if remaining <= 0:
-                return "Context limit reached."
-
-            messages = (
-                await self._message_history_service
-                .get_recent_messages(
+        with langfuse.start_as_current_observation(
+            as_type="tool",
+            name="get_recent_messages",
+            input={
+                "channel_id": str(channel_id),
+                "top_k": self._retrieval_top_k,
+            },
+        ) as observation:
+            recent_messages = (
+                await self._message_history_service.get_recent_messages(
                     channel_id=channel_id,
-                    limit=min(
-                        max_messages_per_tool_call,
-                        remaining,
-                    ),
+                    limit=self._retrieval_top_k,
                 )
             )
 
-            new_messages = [
-                message
-                for message in messages
-                if message.message_id not in retrieved_message_ids
-            ]
-
-            retrieved_message_ids.update(
-                message.message_id
-                for message in new_messages
+            observation.update(
+                output={
+                    "message_count": len(recent_messages),
+                    "message_ids": [
+                        str(message.message_id)
+                        for message in recent_messages
+                    ],
+                },
             )
 
-            return self._format_recent_messages(
-                new_messages,
-                current_user_id,
-            )
-
-        @tool
-        async def search_messages(
-                query: str = Field(
-                    min_length=1,
-                    max_length=500,
-                    description=(
-                            "A focused semantic query describing the draft topic, "
-                            "concern, or requested action."
-                    ),
-                ),
-        ) -> str:
-            """Search earlier historical messages semantically.
-
-            Use this when recent messages do not directly relate to the draft,
-            or when earlier context may be needed.
-            """
-
-            remaining = remaining_context_limit()
-
-            if remaining <= 0:
-                return "Context limit reached."
-
-            query_embedding = await run_in_threadpool(
-                self._text_embedder.embed,
-                query,
-            )
-
-            messages = (
-                await self._message_search_index_repository
-                .find_similar(
+        # Run PostgreSQL searches sequentially: they share an AsyncSession.
+        with langfuse.start_as_current_observation(
+            as_type="tool",
+            name="search_messages",
+            input={
+                "channel_id": str(channel_id),
+                "top_k": self._retrieval_top_k,
+                "query_source": "draft",
+            },
+        ) as observation:
+            semantic_messages = (
+                await self._message_search_index_repository.find_similar(
                     channel_id=channel_id,
-                    query_embedding=query_embedding,
-                    limit=min(
-                        max_messages_per_tool_call,
-                        remaining,
-                    ),
+                    query_embedding=draft_embedding,
+                    limit=self._retrieval_top_k,
                 )
             )
 
-            new_messages = [
-                message
-                for message in messages
-                if message.message_id not in retrieved_message_ids
-            ]
-
-            retrieved_message_ids.update(
-                message.message_id
-                for message in new_messages
+            observation.update(
+                output={
+                    "message_count": len(semantic_messages),
+                    "message_ids": [
+                        str(message.message_id)
+                        for message in semantic_messages
+                    ],
+                },
             )
 
-            return self._format_search_index_messages(
-                new_messages,
-                current_user_id,
+        with langfuse.start_as_current_observation(
+            as_type="tool",
+            name="search_messages_by_keywords",
+            input={
+                "channel_id": str(channel_id),
+                "top_k": self._retrieval_top_k,
+                "query_source": "draft",
+            },
+        ) as observation:
+            keyword_messages = (
+                await self._message_keyword_index_repository.find_by_keywords(
+                    channel_id=channel_id,
+                    query=draft,
+                    limit=self._retrieval_top_k,
+                )
             )
+
+            observation.update(
+                output={
+                    "message_count": len(keyword_messages),
+                    "message_ids": [
+                        str(message.message_id)
+                        for message in keyword_messages
+                    ],
+                },
+            )
+
+        with langfuse.start_as_current_observation(
+            as_type="tool",
+            name="search_summaries",
+            input={
+                "channel_id": str(channel_id),
+                "top_k": self._retrieval_top_k,
+                "query_source": "draft",
+            },
+        ) as observation:
+            summaries = await self._find_draft_summaries(
+                channel_id=channel_id,
+                draft_embedding=draft_embedding,
+                limit=self._retrieval_top_k,
+            )
+
+            observation.update(
+                output={
+                    "summary_count": len(summaries),
+                    "summary_ids": [
+                        str(summary.summary_id)
+                        for summary in summaries
+                    ],
+                },
+            )
+
+        return (
+            recent_messages,
+            semantic_messages,
+            keyword_messages,
+            summaries,
+        )
+
+    @staticmethod
+    def _fuse_messages(
+        semantic_messages: list[MessageSearchIndex],
+        keyword_messages: list[MessageKeywordSearchResult],
+        limit: int,
+        rank_constant: int,
+    ) -> list[MessageSearchIndex | MessageKeywordSearchResult]:
+        scores: dict[UUID, float] = {}
+        messages_by_id: dict[
+            UUID,
+            MessageSearchIndex | MessageKeywordSearchResult,
+        ] = {}
+
+        for ranked_messages in (
+            semantic_messages,
+            keyword_messages,
+        ):
+            for rank, message in enumerate(
+                ranked_messages,
+                start=1,
+            ):
+                message_id = message.message_id
+
+                messages_by_id.setdefault(
+                    message_id,
+                    message,
+                )
+
+                scores[message_id] = (
+                    scores.get(message_id, 0.0)
+                    + 1.0 / (rank_constant + rank)
+                )
+
+        ranked_ids = sorted(
+            scores,
+            key=lambda message_id: (
+                -scores[message_id],
+                str(message_id),
+            ),
+        )
 
         return [
-            get_recent_messages,
-            search_messages,
-        ], retrieved_message_ids
+            messages_by_id[message_id]
+            for message_id in ranked_ids[:limit]
+        ]
 
     async def _wait_for_context_cursor(
         self,
@@ -288,10 +482,8 @@ class ConversationalAssistanceService:
         channel_id: UUID,
         user_id: UUID,
     ) -> None:
-        channel = (
-            await self._channel_repository.get_channel_by_id(
-                channel_id,
-            )
+        channel = await self._channel_repository.get_channel_by_id(
+            channel_id,
         )
 
         if (
@@ -320,9 +512,11 @@ class ConversationalAssistanceService:
             raise InvalidMessageCursorError() from exception
 
     @staticmethod
-    def _format_recent_messages(
-            messages: list[Message],
-            current_user_id: UUID,
+    def _format_messages(
+        messages: list[
+            Message | MessageSearchIndex | MessageKeywordSearchResult
+        ],
+        current_user_id: UUID,
     ) -> str:
         if not messages:
             return "No messages found."
@@ -330,6 +524,7 @@ class ConversationalAssistanceService:
         return "\n".join(
             (
                 f"{message.message_id} | "
+                f"{message.created_at.isoformat()} | "
                 f"{'You' if message.author_id == current_user_id else 'Other person'}: "
                 f"{message.message_content or '[attachment only]'}"
             )
@@ -337,18 +532,18 @@ class ConversationalAssistanceService:
         )
 
     @staticmethod
-    def _format_search_index_messages(
-            messages: list[MessageSearchIndex],
-            current_user_id: UUID,
+    def _format_summaries(
+        summaries: list[ConversationSummary],
     ) -> str:
-        if not messages:
-            return "No messages found."
+        if not summaries:
+            return "No historical summaries found."
 
-        return "\n".join(
+        return "\n\n".join(
             (
-                f"{message.message_id} | "
-                f"{'You' if message.author_id == current_user_id else 'Other person'}: "
-                f"{message.message_content}"
+                f"summary_id={summary.summary_id}\n"
+                f"Window: {summary.window_start_created_at.isoformat()}"
+                f" through {summary.window_end_created_at.isoformat()}\n"
+                f"{summary.summary_content}"
             )
-            for message in messages
+            for summary in summaries
         )

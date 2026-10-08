@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,6 +72,17 @@ class Settings(BaseSettings):
     ollama_text_embedding_model_name: str = "nomic-embed-text"
     conversational_assistance_context_message_limit: int = 30
     conversational_assistance_playbook_limit: int = 3
+    conversational_assistance_retrieval_top_k: int = 3
+    # Maximum number of historical messages retained after RRF fusion.
+    conversational_assistance_fusion_top_k: int = Field(
+        default=3,
+        ge=1,
+    )
+    # Controls how strongly RRF favors higher-ranked candidates.
+    conversational_assistance_rrf_rank_constant: int = Field(
+        default=60,
+        ge=1,
+    )
     # Maximum time the API waits for Cassandra to catch up to the
     # client-provided context cursor before returning 503.
     conversational_assistance_context_wait_timeout_seconds: float =  1.0
@@ -81,6 +93,13 @@ class Settings(BaseSettings):
     kafka_conversation_summary_group_id: str = "discord-conversation-summary-v1"
     # Allow slower local LLM calls and small historical backfills.
     kafka_conversation_summary_max_poll_interval_ms: int = 1_800_000
+
+    # ---Elasticsearch settings---
+    elasticsearch_url: str = "http://localhost:9200"
+    elasticsearch_message_index_name: str = "discord-messages-v1"
+    elasticsearch_request_timeout_seconds: float = 10.0
+    kafka_message_keyword_index_group_id: str = "discord-message-keyword-index-v1"
+
 
     model_config = SettingsConfigDict(
         env_file=".env",

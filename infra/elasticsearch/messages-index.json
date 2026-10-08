@@ -1,0 +1,27 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "message_id": {
+        "type": "keyword"
+      },
+      "channel_id": {
+        "type": "keyword"
+      },
+      "author_id": {
+        "type": "keyword"
+      },
+      "created_at": {
+        "type": "date"
+      },
+      "message_content": {
+        "type": "text",
+        "analyzer": "standard"
+      }
+    }
+  }
+}

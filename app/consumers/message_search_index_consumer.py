@@ -18,26 +18,27 @@ from app.domain.message import Message
 from app.events.message import MessagePersistedEvent
 from app.models.channel_type import ChannelType
 from app.repositories.channel_repository import ChannelRepository
-from app.repositories.message_search_index_repository import (
-    MessageSearchIndexRepository,
-)
+from app.repositories.message_search_index_repository import MessageSearchIndexRepository
+from app.repositories.elasticsearch.message_keyword_index_repository import MessageKeywordIndexRepository
 
 logger = logging.getLogger(__name__)
 
 
 class MessageSearchIndexConsumer:
     def __init__(
-        self,
-        consumer: Consumer,
-        topic: str,
-        session_factory: async_sessionmaker[AsyncSession],
-        text_embedder: OllamaTextEmbedder,
-        poll_timeout_seconds: float,
+            self,
+            consumer: Consumer,
+            topic: str,
+            session_factory: async_sessionmaker[AsyncSession],
+            text_embedder: OllamaTextEmbedder,
+            keyword_index_repository: MessageKeywordIndexRepository,
+            poll_timeout_seconds: float,
     ) -> None:
         self._consumer = consumer
         self._topic = topic
         self._session_factory = session_factory
         self._text_embedder = text_embedder
+        self._keyword_index_repository = keyword_index_repository
         self._poll_timeout_seconds = poll_timeout_seconds
 
     async def run(self) -> None:
@@ -141,6 +142,10 @@ class MessageSearchIndexConsumer:
                 message=message,
                 embedding=embedding,
             )
+
+        await self._keyword_index_repository.upsert(
+            message=message,
+        )
 
         return True
 
