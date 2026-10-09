@@ -5,21 +5,17 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.domain.message import Message
 from app.exceptions.channel import ChannelNotFoundError
-from app.exceptions.guild import (
-    GuildMembershipRequiredError,
-)
+from app.exceptions.guild import GuildMembershipRequiredError
 from app.messaging.message_publisher import MessagePublisher
 from app.models.channel_type import ChannelType
 from app.repositories.channel_repository import (
     ChannelRepository,
 )
-from app.repositories.direct_message_repository import (
-    DirectMessageRepository,
-)
 from app.repositories.guild_repository import (
     GuildRepository,
 )
 from app.schemas.message import MessageCreate
+from app.services.authorization_service import AuthorizationService
 
 
 class MessageSubmissionService:
@@ -27,14 +23,12 @@ class MessageSubmissionService:
         self,
         channel_repository: ChannelRepository,
         guild_repository: GuildRepository,
-        direct_message_repository: DirectMessageRepository,
+        authorization_service: AuthorizationService,
         message_publisher: MessagePublisher,
     ) -> None:
         self._channel_repository = channel_repository
         self._guild_repository = guild_repository
-        self._direct_message_repository = (
-            direct_message_repository
-        )
+        self._authorization_service = authorization_service
         self._message_publisher = message_publisher
 
     async def create_message(
@@ -86,17 +80,10 @@ class MessageSubmissionService:
             raise ChannelNotFoundError(channel_id)
 
         if channel.channel_type == ChannelType.DM:
-            is_participant = (
-                await self._direct_message_repository
-                .is_participant(
-                    channel_id=channel_id,
-                    user_id=user_id,
-                )
+            await self._authorization_service.require_dm_access(
+                channel_id=channel_id,
+                user_id=user_id,
             )
-
-            if not is_participant:
-                raise ChannelNotFoundError(channel_id)
-
             return
 
         if channel.guild_id is None:

@@ -25,45 +25,41 @@ from app.repositories.guild_repository import (
 from app.repositories.message_repository import (
     MessageRepository,
 )
+from app.services.authorization_service import AuthorizationService
 
 
 class MessageHistoryService:
     def __init__(
-        self,
-        channel_repository: ChannelRepository,
-        guild_repository: GuildRepository,
-        direct_message_repository: DirectMessageRepository,
-        message_repository: MessageRepository,
+            self,
+            channel_repository: ChannelRepository,
+            guild_repository: GuildRepository,
+            authorization_service: AuthorizationService,
+            message_repository: MessageRepository,
     ) -> None:
         self._channel_repository = channel_repository
         self._guild_repository = guild_repository
-        self._direct_message_repository = (
-            direct_message_repository
-        )
+        self._authorization_service = authorization_service
         self._message_repository = message_repository
 
     async def _validate_channel_access(
-        self,
-        channel_id: UUID,
-        user_id: UUID,
+            self,
+            channel_id: UUID,
+            user_id: UUID,
     ) -> None:
         channel = (
             await self._channel_repository.get_channel_by_id(
                 channel_id,
             )
         )
+
         if channel is None:
             raise ChannelNotFoundError(channel_id)
+
         if channel.channel_type == ChannelType.DM:
-            is_participant = (
-                await self._direct_message_repository
-                .is_participant(
-                    channel_id=channel_id,
-                    user_id=user_id,
-                )
+            await self._authorization_service.require_dm_access(
+                channel_id=channel_id,
+                user_id=user_id,
             )
-            if not is_participant:
-                raise ChannelNotFoundError(channel_id)
             return
 
         if channel.guild_id is None:
@@ -88,7 +84,7 @@ class MessageHistoryService:
         limit: int,
         cursor: str | None,
     ) -> MessagePage:
-        # 1. Authorize access through PostgreSQL.
+        # 1. Authorize access before reading messages.
         await self._validate_channel_access(
             channel_id=channel_id,
             user_id=current_user_id,

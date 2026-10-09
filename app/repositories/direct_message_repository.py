@@ -77,3 +77,26 @@ class DirectMessageRepository:
         self._session.add(direct_message_channel)
 
         return direct_message_channel
+
+    async def get_by_channel_id(
+            self,
+            channel_id: UUID,
+    ) -> DirectMessageChannel | None:
+        statement = (
+            select(DirectMessageChannel)
+            .where(
+                DirectMessageChannel.channel_id == channel_id,
+            )
+        )
+
+        result = await self._session.execute(statement)
+
+        return result.scalar_one_or_none()
+
+    async def delete(
+            self,
+            direct_message_channel: DirectMessageChannel,
+    ) -> None:
+        await self._session.delete(
+            direct_message_channel,
+        )

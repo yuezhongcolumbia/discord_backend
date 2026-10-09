@@ -17,4 +17,5 @@ dependencies = [
     "langchain-ollama>=1.1.0",
     "elasticsearch[async]>=9,<10",
     "pyasyncore>=1.0.5",
+    "redis>=8.1.0",
 ]

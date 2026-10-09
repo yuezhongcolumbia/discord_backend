@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     elasticsearch_request_timeout_seconds: float = 10.0
     kafka_message_keyword_index_group_id: str = "discord-message-keyword-index-v1"
 
+    # --- Redis authorization cache ---
+    redis_url: str = "redis://localhost:6379/0"
+    redis_socket_connect_timeout_seconds: float = 1.0
+    redis_socket_timeout_seconds: float = 1.0
+    authorization_cache_ttl_seconds: int = Field(
+        default=30,
+        ge=1,
+    )
+
 
     model_config = SettingsConfigDict(
         env_file=".env",

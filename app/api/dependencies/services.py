@@ -26,6 +26,7 @@ from app.services.guild_service import GuildService
 from app.services.channel_service import ChannelService
 from app.services.message_history_service import MessageHistoryService
 from app.services.message_submission_service import MessageSubmissionService
+from app.services.authorization_service import AuthorizationService
 
 
 def get_guild_service(
@@ -38,26 +39,26 @@ def get_channel_service(
 ) -> ChannelService:
     return ChannelService(session)
 
-# def get_message_service(
-#     db_session: Annotated[
-#         AsyncSession,
-#         Depends(get_db_session),
-#     ],
-#     message_repository: Annotated[
-#         MessageRepository,
-#         Depends(get_message_repository),
-#     ],
-#     message_publisher: Annotated[
-#         MessagePublisher,
-#         Depends(get_message_publisher),
-#     ]
-# ) -> MessageService:
-#     return MessageService(
-#         channel_repository=ChannelRepository(db_session),
-#         guild_repository=GuildRepository(db_session),
-#         message_repository=message_repository,
-#         message_publisher=message_publisher,
-#     )
+def get_authorization_service(
+    request: Request,
+    db_session: Annotated[
+        AsyncSession,
+        Depends(get_db_session),
+    ],
+) -> AuthorizationService:
+    return AuthorizationService(
+        channel_repository=ChannelRepository(
+            db_session,
+        ),
+        direct_message_repository=DirectMessageRepository(
+            db_session,
+        ),
+        redis_client=request.app.state.redis_client,
+        cache_ttl_seconds=(
+            settings.authorization_cache_ttl_seconds
+        ),
+    )
+
 def get_message_submission_service(
     db_session: Annotated[
         AsyncSession,
@@ -67,13 +68,15 @@ def get_message_submission_service(
         MessagePublisher,
         Depends(get_message_publisher),
     ],
+    authorization_service: Annotated[
+        AuthorizationService,
+        Depends(get_authorization_service),
+    ],
 ) -> MessageSubmissionService:
     return MessageSubmissionService(
         channel_repository=ChannelRepository(db_session),
         guild_repository=GuildRepository(db_session),
-        direct_message_repository=DirectMessageRepository(
-            db_session,
-        ),
+        authorization_service=authorization_service,
         message_publisher=message_publisher,
     )
 
@@ -87,13 +90,15 @@ def get_message_history_service(
         MessageRepository,
         Depends(get_message_repository),
     ],
+    authorization_service: Annotated[
+        AuthorizationService,
+        Depends(get_authorization_service),
+    ],
 ) -> MessageHistoryService:
     return MessageHistoryService(
         channel_repository=ChannelRepository(db_session),
         guild_repository=GuildRepository(db_session),
-        direct_message_repository=DirectMessageRepository(
-            db_session,
-        ),
+        authorization_service=authorization_service,
         message_repository=message_repository,
     )
 
@@ -107,12 +112,13 @@ def get_conversational_assistance_service(
         MessageHistoryService,
         Depends(get_message_history_service),
     ],
+    authorization_service: Annotated[
+        AuthorizationService,
+        Depends(get_authorization_service),
+    ]
 ) -> ConversationalAssistanceService:
     return ConversationalAssistanceService(
-        channel_repository=ChannelRepository(db_session),
-        direct_message_repository=DirectMessageRepository(
-            db_session,
-        ),
+        authorization_service=authorization_service,
         message_history_service=message_history_service,
         message_search_index_repository=MessageSearchIndexRepository(
             db_session,
@@ -155,3 +161,4 @@ def get_conversational_assistance_service(
             .conversational_assistance_context_wait_timeout_seconds
         ),
     )
+

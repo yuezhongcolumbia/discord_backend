@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from app.ai.ollama_conversational_assistant import (
     OllamaConversationalAssistant,
 )
+from app.services.authorization_service import AuthorizationService
 from app.ai.ollama_text_embedder import OllamaTextEmbedder
 from app.domain.message import Message
 from app.domain.message_cursor import MessageCursor
@@ -47,8 +48,7 @@ from app.services.message_history_service import MessageHistoryService
 class ConversationalAssistanceService:
     def __init__(
         self,
-        channel_repository: ChannelRepository,
-        direct_message_repository: DirectMessageRepository,
+        authorization_service: AuthorizationService,
         message_history_service: MessageHistoryService,
         message_search_index_repository: MessageSearchIndexRepository,
         message_keyword_index_repository: MessageKeywordIndexRepository,
@@ -83,8 +83,7 @@ class ConversationalAssistanceService:
                 "Context message limit must be at least one.",
             )
 
-        self._channel_repository = channel_repository
-        self._direct_message_repository = direct_message_repository
+        self._authorization_service = authorization_service
         self._message_history_service = message_history_service
         self._message_search_index_repository = (
             message_search_index_repository
@@ -113,7 +112,7 @@ class ConversationalAssistanceService:
         current_user_id: UUID,
         request: ConversationalAssistanceRequest,
     ) -> ConversationalAssistanceResponse:
-        await self._validate_dm_access(
+        await self._authorization_service.require_dm_access(
             channel_id=channel_id,
             user_id=current_user_id,
         )
@@ -477,30 +476,6 @@ class ConversationalAssistanceService:
                 min(0.1, remaining_seconds),
             )
 
-    async def _validate_dm_access(
-        self,
-        channel_id: UUID,
-        user_id: UUID,
-    ) -> None:
-        channel = await self._channel_repository.get_channel_by_id(
-            channel_id,
-        )
-
-        if (
-            channel is None
-            or channel.channel_type != ChannelType.DM
-        ):
-            raise ChannelNotFoundError(channel_id)
-
-        is_participant = (
-            await self._direct_message_repository.is_participant(
-                channel_id=channel_id,
-                user_id=user_id,
-            )
-        )
-
-        if not is_participant:
-            raise ChannelNotFoundError(channel_id)
 
     @staticmethod
     def _decode_cursor(

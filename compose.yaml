@@ -152,6 +152,18 @@ services:
       timeout: 10s
       retries: 12
       start_period: 30s
+  redis:
+    image: redis:7.4
+    container_name: discord-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: [ "redis-server", "--save", "", "--appendonly", "no" ]
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 
 

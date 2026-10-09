@@ -9,6 +9,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.cassandra import cassandra_client
 from app.db.elasticsearch import create_elasticsearch_client
+from app.db.redis import create_redis_client
 from app.messaging.kafka import create_kafka_producer
 from app.messaging.kafka_message_accepted_publisher import (
     KafkaMessageAcceptedPublisher,
@@ -26,19 +27,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             elasticsearch_client = create_elasticsearch_client()
 
             try:
-                app.state.elasticsearch_client = elasticsearch_client
+                redis_client = create_redis_client()
 
-                app.state.message_publisher = (
-                    KafkaMessageAcceptedPublisher(
-                        producer=kafka_producer,
-                        topic=settings.kafka_message_accepted_topic,
-                        publish_wait_timeout_seconds=(
-                            settings.kafka_publish_wait_timeout_seconds
-                        ),
+                try:
+                    app.state.elasticsearch_client = (
+                        elasticsearch_client
                     )
-                )
+                    app.state.redis_client = redis_client
 
-                yield
+                    app.state.message_publisher = (
+                        KafkaMessageAcceptedPublisher(
+                            producer=kafka_producer,
+                            topic=settings.kafka_message_accepted_topic,
+                            publish_wait_timeout_seconds=(
+                                settings.kafka_publish_wait_timeout_seconds
+                            ),
+                        )
+                    )
+
+                    yield
+                finally:
+                    await redis_client.aclose()
             finally:
                 await elasticsearch_client.close()
         finally:
